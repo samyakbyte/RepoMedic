@@ -1,0 +1,9 @@
+{
+  "id": "inventory-bug",
+  "name": "Inventory",
+  "description": "Inventory with can_fulfill using '>' instead of '>='.",
+  "bug_category": "boundary condition off-by-one",
+  "failing_test": "tests/test_inventory.py::test_can_fulfill_exact_stock",
+  "test_command": ["pytest", "-q", "tests"],
+  "target_files": ["src/inventory.py"]
+}

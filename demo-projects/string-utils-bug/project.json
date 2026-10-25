@@ -1,0 +1,9 @@
+{
+  "id": "string-utils-bug",
+  "name": "String Utils",
+  "description": "String helpers with a buggy truncate that wrongly truncates exact-length strings.",
+  "bug_category": "boundary condition off-by-one",
+  "failing_test": "tests/test_string_utils.py::test_truncate_exact_length_unchanged",
+  "test_command": ["pytest", "-q", "tests"],
+  "target_files": ["src/string_utils.py"]
+}

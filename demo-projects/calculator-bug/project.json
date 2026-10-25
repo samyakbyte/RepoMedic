@@ -1,0 +1,9 @@
+{
+  "id": "calculator-bug",
+  "name": "Calculator",
+  "description": "Simple arithmetic with a buggy apply_discount (missing / 100 on the percent).",
+  "bug_category": "arithmetic off-by-factor",
+  "failing_test": "tests/test_calc.py::test_apply_discount_partial",
+  "test_command": ["pytest", "-q", "tests"],
+  "target_files": ["src/calc.py"]
+}

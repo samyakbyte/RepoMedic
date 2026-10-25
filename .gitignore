@@ -218,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# RepoMedic runtime (local-only data)
+.env
+.env.*
+!.env.example
+data/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+*.zip
