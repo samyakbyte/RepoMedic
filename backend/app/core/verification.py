@@ -22,32 +22,38 @@ class Verifier:
         result = run_pytest(workspace_root, command, timeout_s=self.timeout_s)
 
         after_failing_names: set[str] = {f.test_id for f in result.failures}
+        prev_fail_set = set(previously_failing)
+        prev_pass_set = set(previously_passing)
 
         verdict = "REPAIR_FAILED"
         reason: Optional[str] = None
         regressions: list[str] = []
-        originally_failing_now_passing: list[str] = []
+        originally_failing_now_passing: list[str] = sorted(prev_fail_set - after_failing_names)
 
         if result.timeout_occurred or result.error_type == "TIMEOUT":
             reason = "VERIFY_TIMEOUT"
+            originally_failing_now_passing = []
         elif result.error_type == "SYNTAX_ERROR":
             reason = "SYNTAX_ERROR"
-        elif result.exit_code != 0:
-            reason = f"EXIT_CODE_{result.exit_code}"
+            originally_failing_now_passing = []
         elif result.failed > 0 or result.errors > 0:
-            still_failing = sorted(set(previously_failing) & after_failing_names)
-            regressed = sorted(after_failing_names - set(previously_failing))
-            if still_failing:
-                reason = "ORIGINAL_STILL_FAILING"
-            elif regressed:
+            still_failing = sorted(prev_fail_set & after_failing_names)
+            regressed = sorted(
+                (after_failing_names & prev_pass_set) or (after_failing_names - prev_fail_set)
+            )
+            if regressed:
                 reason = "REGRESSION"
                 regressions = regressed
+            elif still_failing:
+                reason = "ORIGINAL_STILL_FAILING"
             else:
                 reason = "TESTS_STILL_FAILING"
+        elif result.exit_code != 0:
+            reason = result.error_type or f"EXIT_CODE_{result.exit_code}"
+            originally_failing_now_passing = []
         else:
             verdict = "REPAIR_VERIFIED"
             reason = None
-            originally_failing_now_passing = sorted(set(previously_failing) - after_failing_names)
 
         return VerificationResult(
             verdict=verdict,
