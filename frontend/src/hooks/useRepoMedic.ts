@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, RepoMedicApiError } from '../lib/api';
+import { api, RepoMedicApiError } from '../services/api';
 import {
   WORKING_STATES,
   type ModelStatus,

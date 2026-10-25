@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Play, Loader2, CheckCircle2, XCircle, BarChart3 } from 'lucide-react';
-import { api, RepoMedicApiError } from '../lib/api';
+import { api, RepoMedicApiError } from '../services/api';
 import type { BenchmarkJobDetail, BenchmarkJobSummary, Project } from '../types/api';
 
 interface BenchmarksPageProps {

@@ -1,5 +1,5 @@
 import { CheckCircle2, XCircle, RotateCcw, Download, RefreshCw, Loader2 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api } from '../services/api';
 import type { VerificationResult } from '../types/api';
 
 interface VerificationPanelProps {

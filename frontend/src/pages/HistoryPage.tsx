@@ -1,5 +1,5 @@
 import { ArrowUpRight, Download, History } from 'lucide-react';
-import { api } from '../lib/api';
+import { api } from '../services/api';
 import { stateBadgeStyle } from '../components/StatePipeline';
 import type { SessionSummary } from '../types/api';
 
