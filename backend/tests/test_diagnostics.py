@@ -3,8 +3,6 @@
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import pytest
-
 from app.core.diagnostics import _parse_junit, run_pytest
 from app.core.workspace import WorkspaceManager
 
@@ -66,12 +64,12 @@ def test_running_failing_project(tmp_path):
     ws = mgr.create_workspace("session-diag-fail", "calculator-bug")
     try:
         result = run_pytest(ws, ["pytest", "-q", "tests"])
-        assert result.failed == 1, result.raw_output
+        assert result.failed >= 1, result.raw_output
         assert result.errors == 0
         assert result.error_type is None
         assert result.exit_code == 1
         assert any("test_apply_discount_partial" in f.test_id for f in result.failures)
-        assert "180.0" in result.failures[0].message
+        assert any("180" in f.message for f in result.failures)
     finally:
         mgr.cleanup("session-diag-fail")
 

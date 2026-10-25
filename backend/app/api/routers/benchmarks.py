@@ -1,12 +1,11 @@
 """Benchmark endpoints: start a diagnose->generate->approve->verify sweep across projects."""
 
-import asyncio
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from app.app_core import BENCHMARK_RESULTS_DIR, llm_client, workspace_manager
+from app.app_core import llm_client, workspace_manager
 from app.core.benchmark import BenchmarkRunner
 
 router = APIRouter()
@@ -15,13 +14,18 @@ _runner = BenchmarkRunner(workspace_manager, llm_client)
 
 
 class BenchmarkRunBody(BaseModel):
-    runs_per_project: int = Field(3, ge=1, le=10)
+    runs_per_project: int = Field(1, ge=1, le=10)
     model: Optional[str] = Field(None, description="Ollama model; defaults to configured model")
     project_ids: Optional[list[str]] = Field(None, description="Subset of project ids; default all")
 
 
+def _run_job_sync(job, projects) -> None:
+    _runner.run(job, projects)
+    _runner.save_results(job)
+
+
 @router.post("/run", status_code=202)
-def run_benchmark(body: BenchmarkRunBody):
+def run_benchmark(body: BenchmarkRunBody, background_tasks: BackgroundTasks):
     projects = workspace_manager.list_projects()
     if body.project_ids:
         wanted = set(body.project_ids)
@@ -33,19 +37,13 @@ def run_benchmark(body: BenchmarkRunBody):
 
     model = body.model or llm_client.model
     job = _runner.start(model, body.runs_per_project)
-    # Benchmark jobs are blocking (subprocess + LLM); run in a worker thread.
-    asyncio.create_task(_async_run(job, projects))
+    background_tasks.add_task(_run_job_sync, job, projects)
     return {"job_id": job.job_id, "status": "running", "model": model, "runs_per_project": body.runs_per_project}
-
-
-async def _async_run(job, projects):
-    await asyncio.to_thread(_runner.run, job, projects)
-    _runner.save_results(job)  # writes benchmarks/results/<ts>_<model>.json (+ summary.md)
 
 
 @router.get("")
 def list_benchmarks():
-    return [_job_summary(j) for j in _runner._jobs.values()]
+    return [_job_summary(j) for j in reversed(list(_runner._jobs.values()))]
 
 
 @router.get("/{job_id}")
@@ -62,6 +60,7 @@ def _job_summary(job) -> dict:
     return {
         "job_id": job.job_id,
         "model": job.model,
+        "runs_per_project": job.runs_per_project,
         "status": job.status,
         "created_at": job.created_at,
         "finished_at": job.finished_at,

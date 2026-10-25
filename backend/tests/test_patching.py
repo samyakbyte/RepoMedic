@@ -1,12 +1,11 @@
 """Patch validation, diff generation, apply, and rollback integrity."""
 
+import shutil
 from pathlib import Path
 
-import pytest
-from pydantic import TypeAdapter
-
+from app.config import WORKSPACES_DIR
 from app.core.patching import apply_patch, generate_diff, rollback_patch, validate_patch
-from app.schemas.patch import PatchValidationResult, RepairProposal
+from app.schemas.patch import RepairProposal
 
 WORKSPACE_SESSION = "session-patch-test"
 
@@ -14,12 +13,10 @@ WORKSPACE_SESSION = "session-patch-test"
 def _setup_workspace_file(ws: Path, rel: str, text: str) -> None:
     p = ws / rel
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(text, encoding="utf-8")
+    p.write_bytes(text.encode("utf-8"))
 
 
 def _teardown_workspace(ws: Path) -> None:
-    import shutil
-
     shutil.rmtree(ws, ignore_errors=True)
 
 
@@ -35,16 +32,13 @@ def _proposal(old, new, target="src/calc.py"):
 
 
 def _noop_proposal():
-    return TypeAdapter(RepairProposal).validate_python(
-        {
-            "root_cause": "test",
-            "target_file": "src/calc.py",
-            "old_snippet": "x = 1",
-            "new_snippet": "x = 1",
-            "explanation": "x",
-            "expected_outcome": "y",
-        },
-        strict=False,
+    return RepairProposal.model_construct(
+        root_cause="test",
+        target_file="src/calc.py",
+        old_snippet="x = 1",
+        new_snippet="x = 1",
+        explanation="x",
+        expected_outcome="y",
     )
 
 
@@ -53,11 +47,14 @@ def test_validate_happy_path(tmp_path):
     _setup_workspace_file(ws, "src/calc.py", "def apply_discount(price, percent):\n    return price - price * percent\n")
     try:
         result = validate_patch(
-            str(ws), "src/calc.py", _proposal("return price - price * percent", "return price - price * percent / 100"), ["src/calc.py"]
+            str(ws),
+            "src/calc.py",
+            _proposal("return price - price * percent", "return price - price * percent / 100"),
+            ["src/calc.py"],
         )
         assert result.ok is True
         assert result.codes == []
-        assert result.diff is not None and "- price * percent" in result.diff
+        assert result.diff is not None and "-    return price - price * percent" in result.diff
         assert result.snippet_normalized is False
     finally:
         _teardown_workspace(ws)
@@ -122,6 +119,7 @@ def test_validate_protected_file(tmp_path):
 
 def test_validate_file_not_found(tmp_path):
     ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
     try:
         result = validate_patch(str(ws), "src/missing.py", _proposal("x", "y", target="src/missing.py"), ["src/missing.py"])
         assert result.ok is False
@@ -132,6 +130,7 @@ def test_validate_file_not_found(tmp_path):
 
 def test_validate_path_traversal_rejected(tmp_path):
     ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
     try:
         result = validate_patch(str(ws), "../../etc/passwd", _proposal("x", "y", target="../../etc/passwd"), [])
         assert result.ok is False
@@ -149,37 +148,32 @@ def test_line_ending_normalization_fallback(tmp_path):
         )
         assert result.ok is True
         assert result.snippet_normalized is True
-        patched = (ws / "src" / "calc.py").read_text(encoding="utf-8")  # not applied here; validate only
+        patched = (ws / "src" / "calc.py").read_text(encoding="utf-8")
         assert "return 1" in patched  # validate does not modify the file
     finally:
         _teardown_workspace(ws)
 
 
 def test_apply_and_rollback_hash_integrity(tmp_path):
-    ws = tmp_path / "ws"
-    _setup_workspace_file(ws, "src/calc.py", "def f():\n    return 1\n")
+    real_ws = WORKSPACES_DIR / WORKSPACE_SESSION / "calculator-bug"
+    _setup_workspace_file(real_ws, "src/calc.py", "def f():\n    return 1\n")
     try:
         proposal = _proposal("    return 1", "    return 2")
-        validation = validate_patch(str(ws), "src/calc.py", proposal, ["src/calc.py"])
+        validation = validate_patch(str(real_ws), "src/calc.py", proposal, ["src/calc.py"])
         assert validation.ok
-        result = apply_patch(WORKSPACE_SESSION, 1, "src/calc.py", proposal, validation)
+        result = apply_patch(WORKSPACE_SESSION, 1, "src/calc.py", proposal, validation, workspace_root=real_ws)
         assert result.ok
         assert result.sha_before != result.sha_after
 
-        # The real workspace dir holds the file now.
-        real_ws = Path("data/workspaces") / WORKSPACE_SESSION
         patched = (real_ws / "src" / "calc.py").read_text(encoding="utf-8")
         assert "return 2" in patched
 
-        restored = rollback_patch(WORKSPACE_SESSION, 1, "src/calc.py")
+        restored = rollback_patch(WORKSPACE_SESSION, 1, "src/calc.py", workspace_root=real_ws)
         assert restored == result.sha_before
         again = (real_ws / "src" / "calc.py").read_text(encoding="utf-8")
         assert "return 1" in again
     finally:
-        import shutil
-
-        shutil.rmtree(Path("data/workspaces") / WORKSPACE_SESSION, ignore_errors=True)
-        _teardown_workspace(ws)
+        shutil.rmtree(WORKSPACES_DIR / WORKSPACE_SESSION, ignore_errors=True)
 
 
 def test_generate_diff_shape(tmp_path):

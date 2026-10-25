@@ -25,15 +25,15 @@ WORKING_STATES = {
 ALLOWED_TRANSITIONS = {
     SessionState.IDLE: {SessionState.DIAGNOSING},
     SessionState.DIAGNOSING: {SessionState.FAILURE_DETECTED, SessionState.IDLE, SessionState.ERROR},
-    SessionState.FAILURE_DETECTED: {SessionState.GENERATING_REPAIR},
+    SessionState.FAILURE_DETECTED: {SessionState.GENERATING_REPAIR, SessionState.DIAGNOSING},
     SessionState.GENERATING_REPAIR: {SessionState.PATCH_READY, SessionState.ERROR},
     SessionState.PATCH_READY: {SessionState.AWAITING_APPROVAL},
     SessionState.AWAITING_APPROVAL: {SessionState.APPLYING_PATCH, SessionState.FAILURE_DETECTED},
     SessionState.APPLYING_PATCH: {SessionState.VERIFYING, SessionState.ERROR},
     SessionState.VERIFYING: {SessionState.REPAIR_VERIFIED, SessionState.REPAIR_FAILED, SessionState.ERROR},
-    SessionState.REPAIR_FAILED: {SessionState.GENERATING_REPAIR, SessionState.IDLE},
-    SessionState.REPAIR_VERIFIED: {SessionState.IDLE},
-    SessionState.ERROR: {SessionState.IDLE},
+    SessionState.REPAIR_FAILED: {SessionState.GENERATING_REPAIR, SessionState.FAILURE_DETECTED, SessionState.IDLE},
+    SessionState.REPAIR_VERIFIED: {SessionState.FAILURE_DETECTED, SessionState.IDLE},
+    SessionState.ERROR: {SessionState.IDLE, SessionState.DIAGNOSING, SessionState.FAILURE_DETECTED, SessionState.GENERATING_REPAIR},
 }
 
 
@@ -106,6 +106,7 @@ class SessionStore:
                 raise ApiError(
                     "STATE_CONFLICT",
                     f"Illegal transition {session.state} -> {new_state}",
+                    hint=f"Current state is {session.state.value}; cannot transition to {new_state.value}.",
                     state=session.state.value,
                     status_code=409,
                 )
@@ -167,6 +168,7 @@ class SessionStore:
                 summaries.append(SessionSummary(**data))
             except Exception:
                 continue
+        summaries.sort(key=lambda s: s.updated_at, reverse=True)
         return summaries
 
     @staticmethod

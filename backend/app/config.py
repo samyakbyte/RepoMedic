@@ -3,8 +3,11 @@
 Copy .env.example to .env and adjust as needed. All values are read here,
 the rest of the app imports from this module only.
 """
+
 import os
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _env(name: str, default: str) -> str:
@@ -28,7 +31,8 @@ REPOMEDIC_MAX_ATTEMPTS = int(_env("REPOMEDIC_MAX_ATTEMPTS", "2"))
 REPOMEDIC_MAX_CONTEXT_CHARS = int(_env("REPOMEDIC_MAX_CONTEXT_CHARS", "6000"))
 
 # Data directory (runtime workspaces, sessions, reports — git-ignored)
-DATA_DIR = Path(_env("REPOMEDIC_DATA_DIR", "./data")).resolve()
+_raw_data_dir = os.getenv("REPOMEDIC_DATA_DIR")
+DATA_DIR = Path(_raw_data_dir).resolve() if _raw_data_dir else (REPO_ROOT / "data").resolve()
 WORKSPACES_DIR = DATA_DIR / "workspaces"
 SESSIONS_DIR = DATA_DIR / "sessions"
 REPORTS_DIR = DATA_DIR / "reports"
@@ -41,7 +45,12 @@ APP_VERSION = "0.1.0"
 APP_NAME = "repomedic"
 
 # CORS origins allowed to call the API (frontend dev servers)
-CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
 
 # Files that are never patchable by the model (protected fixtures)
 PROTECTED_NAMES = {

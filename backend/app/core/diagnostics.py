@@ -13,7 +13,7 @@ from app.core.security import scrubbed_env
 from app.schemas.diagnostic import DiagnosticsResult, Failure
 
 
-def _kill_process_tree(proc: "subprocess.Popen[bytes]") -> None:
+def _kill_process_tree(proc: "subprocess.Popen[str]") -> None:
     """Best-effort kill of the process and its children."""
     if os.name == "nt":
         try:
@@ -37,7 +37,7 @@ def _kill_process_tree(proc: "subprocess.Popen[bytes]") -> None:
         else:
             import time
 
-            time.sleep(0.5)
+            time.sleep(0.2)
             try:
                 os.killpg(pgid, signal.SIGKILL)
             except ProcessLookupError:
@@ -72,7 +72,7 @@ def run_pytest(workspace_root: str | Path, command: List[str], timeout_s: float 
     env = scrubbed_env(workspace)
     result = DiagnosticsResult(exit_code=-1)
 
-    proc: Optional[subprocess.Popen[bytes]] = None
+    proc: Optional[subprocess.Popen[str]] = None
     timeout_occurred = False
     try:
         if os.name == "nt":
@@ -123,23 +123,19 @@ def run_pytest(workspace_root: str | Path, command: List[str], timeout_s: float 
         except Exception as exc:  # noqa: BLE001
             result.error_type = result.error_type or "INTERNAL"
             result.raw_output += f"\n[junit parse error: {exc}]"
-    else:
-        if result.exit_code == 5:
-            result.error_type = "NO_TESTS_COLLECTED"
-        elif timeout_occurred:
-            result.error_type = "TIMEOUT"
-        elif result.exit_code != 0:
-            result.error_type = "INTERNAL"
 
-    if timeout_occurred and result.error_type is None:
+    if timeout_occurred:
         result.error_type = "TIMEOUT"
-
-    if result.error_type is None:
+    elif result.exit_code == 5:
+        result.error_type = "NO_TESTS_COLLECTED"
+    elif result.error_type is None:
         text_lc = combined.lower()
         if "syntaxerror" in text_lc or "syntax error" in text_lc:
             result.error_type = "SYNTAX_ERROR"
         elif result.errors > 0 and result.passed == 0 and result.failed == 0:
             result.error_type = "SYNTAX_ERROR"
+        elif not junit_path.exists() and result.exit_code != 0:
+            result.error_type = "INTERNAL"
 
     return result
 
@@ -165,7 +161,20 @@ def _parse_junit(path: Path, result: DiagnosticsResult) -> None:
             except ValueError:
                 line_int = None
             classname = tc.get("classname", "")
-            test_id = f"{file_}::{name}" if file_ else (f"{classname}::{name}" if classname else name)
+            if file_:
+                norm_file = file_.replace("\\", "/")
+                test_id = f"{norm_file}::{name}"
+            elif classname:
+                # pytest often omits `file` attribute in JUnit XML and emits classname="tests.test_calc"
+                if "." in classname:
+                    norm_file = classname.replace(".", "/") + ".py"
+                    test_id = f"{norm_file}::{name}"
+                else:
+                    norm_file = f"tests/{classname}.py"
+                    test_id = f"{norm_file}::{name}"
+                file_ = norm_file
+            else:
+                test_id = name
 
             failure_el = tc.find("failure")
             error_el = tc.find("error")
@@ -207,6 +216,9 @@ def _parse_junit(path: Path, result: DiagnosticsResult) -> None:
     result.failures = failures
     result.passing_tests = passing_tests
     try:
-        result.duration_s = float(root.get("time", "0") or 0)
+        suite_time = root.get("time")
+        if suite_time is None and suites:
+            suite_time = suites[0].get("time")
+        result.duration_s = float(suite_time or 0)
     except ValueError:
         result.duration_s = 0.0
